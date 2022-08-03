@@ -105,7 +105,8 @@ def get_cfg() -> CfgNode:
     """
     from .defaults import _C
 
-    return _C.clone()
+    return _C   #as the global config
+    #return _C.clone()
 
 
 def set_global_cfg(cfg: CfgNode) -> None:

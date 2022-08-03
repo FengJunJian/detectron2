@@ -11,7 +11,8 @@ from detectron2.layers import ShapeSpec, batched_nms, cat, cross_entropy, nonzer
 from detectron2.modeling.box_regression import Box2BoxTransform, _dense_box_regression_loss
 from detectron2.structures import Boxes, Instances
 from detectron2.utils.events import get_event_storage
-
+from detectron2.config import get_cfg
+import sklearn.metrics as skm
 __all__ = ["fast_rcnn_inference", "FastRCNNOutputLayers"]
 
 
@@ -93,11 +94,12 @@ def _log_classification_stats(pred_logits, gt_classes, prefix="fast_rcnn"):
         pred_logits: Rx(K+1) logits. The last column is for background class.
         gt_classes: R labels
     """
+    
     num_instances = gt_classes.numel()
     if num_instances == 0:
         return
     pred_classes = pred_logits.argmax(dim=1)
-    bg_class_ind = pred_logits.shape[1] - 1
+    bg_class_ind = pred_logits.shape[1] - 1 #background class id
 
     fg_inds = (gt_classes >= 0) & (gt_classes < bg_class_ind)
     num_fg = fg_inds.nonzero().numel()
@@ -107,8 +109,37 @@ def _log_classification_stats(pred_logits, gt_classes, prefix="fast_rcnn"):
     num_false_negative = (fg_pred_classes == bg_class_ind).nonzero().numel()
     num_accurate = (pred_classes == gt_classes).nonzero().numel()
     fg_num_accurate = (fg_pred_classes == fg_gt_classes).nonzero().numel()
-
+    
+    
+    #cfg=get_cfg()
     storage = get_event_storage()
+    #############################################################################
+    #if True : # TODO fixed for learning status and "SEMISUPNET" in cfg
+    all_cls = [c for c in range(pred_logits.shape[1]-1)]
+    current_cls=sorted(set(fg_gt_classes.tolist()))#gt_classes fg_gt_classes
+    # skm.accuracy_score(gt_classes.tolist(),pred_classes.tolist())#equal to num_accurate / num_instances
+    # all_confusion = skm.multilabel_confusion_matrix(fg_gt_classes.tolist(), fg_pred_classes.tolist(),
+    #                                                 labels=all_cls)  # [n_classes,tn, fp, fn, tp]
+    #F1 = skm.f1_score(fg_gt_classes.tolist(), fg_pred_classes.tolist(), average='macro')
+    # b=skm.classification_report(gt_classes.tolist(),pred_classes.tolist(),labels=all_cls)
+    # _all_confusion=skm.confusion_matrix(gt_classes.tolist(),pred_classes.tolist(),labels=all_cls)
+    all_prfs = skm.precision_recall_fscore_support(fg_gt_classes.tolist(), fg_pred_classes.tolist(),
+                                                   labels=all_cls)  # precision ,recall ,fbeta_score,support
+    # cfg.SEMISUPNET.BBOX_THRESHOLD
+    for c in current_cls:
+        if all_prfs[2][c]!=0:
+            storage.put_scalar(f"{prefix}/class{c}_F1", all_prfs[2][c])
+    # for c in all_cls:
+    #     mm = all_confusion[c]
+    #     if c==bg_class_ind:
+    #         storage.put_scalar(f"{prefix}/bg_accuracy", (mm[0,0]+mm[1,1])/num_instances)
+    #         storage.put_scalar(f"{prefix}/bg_precision", all_prfs[0][c])
+    #         storage.put_scalar(f"{prefix}/bg_recall", all_prfs[1][c])
+    #     else:
+    #         storage.put_scalar(f"{prefix}/class{c}_accuracy", (mm[0, 0] + mm[1, 1]) / num_instances)
+    #         storage.put_scalar(f"{prefix}/class{c}_precision", all_prfs[0][c])
+    #         storage.put_scalar(f"{prefix}/class{c}_recall", all_prfs[1][c])
+    #############################################################################
     storage.put_scalar(f"{prefix}/cls_accuracy", num_accurate / num_instances)
     if num_fg > 0:
         storage.put_scalar(f"{prefix}/fg_cls_accuracy", fg_num_accurate / num_fg)
@@ -357,8 +388,8 @@ class FastRCNNOutputLayers(nn.Module):
         """
         Args:
             gt_classes: a long tensor of shape R that contains the gt class label of each proposal.
-            num_fed_loss_classes: minimum number of classes to keep when calculating federated loss.
-            Will sample negative classes if number of unique gt_classes is smaller than this value.
+            num_fed_loss_classes: number of classes to keep in total, including both unique gt
+                classes and sampled negative classes
             num_classes: number of foreground classes
             weight: probabilities used to sample negative classes
 
@@ -377,8 +408,6 @@ class FastRCNNOutputLayers(nn.Module):
                 prob, num_fed_loss_classes - len(unique_gt_classes), replacement=False
             )
             fed_loss_classes = torch.cat([unique_gt_classes, sampled_negative_classes])
-        else:
-            fed_loss_classes = unique_gt_classes
         return fed_loss_classes
 
     # Implementation from https://github.com/xingyizhou/CenterNet2/blob/master/projects/CenterNet2/centernet/modeling/roi_heads/custom_fast_rcnn.py#L113  # noqa

@@ -1,6 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 from __future__ import division
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Tuple
 import torch
 from torch import device
 from torch.nn import functional as F
@@ -57,10 +57,7 @@ class ImageList(object):
 
     @staticmethod
     def from_tensors(
-        tensors: List[torch.Tensor],
-        size_divisibility: int = 0,
-        pad_value: float = 0.0,
-        padding_constraints: Optional[Dict[str, int]] = None,
+        tensors: List[torch.Tensor], size_divisibility: int = 0, pad_value: float = 0.0
     ) -> "ImageList":
         """
         Args:
@@ -70,11 +67,8 @@ class ImageList(object):
             size_divisibility (int): If `size_divisibility > 0`, add padding to ensure
                 the common height and width is divisible by `size_divisibility`.
                 This depends on the model and many models need a divisibility of 32.
-            pad_value (float): value to pad.
-            padding_constraints (optional[Dict]): If given, it would follow the format as
-                {"size_divisibility": int, "square_size": int}, where `size_divisibility` will
-                overwrite the above one if presented and `square_size` indicates the
-                square padding size if `square_size` > 0.
+            pad_value (float): value to pad
+
         Returns:
             an `ImageList`.
         """
@@ -88,13 +82,6 @@ class ImageList(object):
         image_sizes_tensor = [shapes_to_tensor(x) for x in image_sizes]
         max_size = torch.stack(image_sizes_tensor).max(0).values
 
-        if padding_constraints is not None:
-            square_size = padding_constraints.get("square_size", 0)
-            if square_size > 0:
-                # pad to square.
-                max_size[0] = max_size[1] = square_size
-            if "size_divisibility" in padding_constraints:
-                size_divisibility = padding_constraints["size_divisibility"]
         if size_divisibility > 1:
             stride = size_divisibility
             # the last two dims are H,W, both subject to divisibility requirement

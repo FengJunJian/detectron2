@@ -413,6 +413,7 @@ class RPN(nn.Module):
         )
 
         valid_mask = gt_labels >= 0
+
         objectness_loss = F.binary_cross_entropy_with_logits(
             cat(pred_objectness_logits, dim=1)[valid_mask],
             gt_labels[valid_mask].to(torch.float32),
